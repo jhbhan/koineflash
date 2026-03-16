@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { StyleSheet, View, Text } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { flashcards } from '../src/data/flashcards';
 import { QuizOption } from '../src/components/QuizOption';
 import { ProgressBar } from '../src/components/ProgressBar';
 import { ScoreDisplay } from '../src/components/ScoreDisplay';
 import { ScreenWrapper } from '../src/components/ScreenWrapper';
+import { Button } from '../src/components/Button';
 import { useProgress } from '../src/hooks/useProgress';
+import { useSettings } from '../src/hooks/useSettings';
 import { shuffle } from '../src/utils/shuffle';
 import { generateQuizOptions } from '../src/utils/quizHelpers';
 import { CategoryId, Flashcard } from '../src/types';
 import { Colors } from '../src/constants/colors';
+import { playCorrectSound, playIncorrectSound, unloadSounds } from '../src/utils/sounds';
 
 export default function QuizScreen() {
   const { categoryId, customItems } = useLocalSearchParams<{ 
@@ -19,6 +23,7 @@ export default function QuizScreen() {
   }>();
   const router = useRouter();
   const { updateCardProgress, saveSessionResult } = useProgress();
+  const { settings } = useSettings();
 
   const [cards] = useState(() => {
     let filtered = flashcards;
@@ -39,12 +44,53 @@ export default function QuizScreen() {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
 
+  useEffect(() => {
+    return () => unloadSounds();
+  }, []);
+
   const currentCard = cards[currentIndex];
 
   const options = useMemo(() => {
     if (!currentCard) return [];
     return generateQuizOptions(currentCard, flashcards);
   }, [currentCard]);
+
+  const goToNext = useCallback(() => {
+    const nextIndex = currentIndex + 1;
+    if (nextIndex < cards.length) {
+      setCurrentIndex(nextIndex);
+      setIsAnswered(false);
+      setSelectedAnswer(null);
+    } else {
+      // Session complete logic is handled in handleSelectOption for auto-advance
+      // But if manual advance is on, we might need it here too.
+      completeSession();
+    }
+  }, [currentIndex, cards.length]);
+
+  const completeSession = useCallback(() => {
+    const result = {
+      categoryId: (categoryId as CategoryId) || 'all',
+      mode: 'quiz' as const,
+      score: correctIds.length,
+      total: cards.length,
+      missedCardIds: incorrectIds,
+      completedAt: Date.now(),
+    };
+
+    saveSessionResult(result);
+    router.replace({
+      pathname: '/results',
+      params: {
+        score: result.score,
+        total: result.total,
+        missedIds: result.missedCardIds.join(','),
+        mode: 'quiz',
+        categoryId: result.categoryId,
+        customItems,
+      },
+    });
+  }, [correctIds, incorrectIds, cards.length, categoryId, customItems]);
 
   const handleSelectOption = useCallback(async (answer: string) => {
     if (isAnswered) return;
@@ -53,6 +99,18 @@ export default function QuizScreen() {
     setIsAnswered(true);
 
     const isCorrect = answer === currentCard.answer;
+    
+    // Effects
+    if (settings.hapticFeedback) {
+      Haptics.notificationAsync(
+        isCorrect ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error
+      );
+    }
+    if (settings.soundEnabled) {
+      if (isCorrect) playCorrectSound();
+      else playIncorrectSound();
+    }
+
     if (isCorrect) {
       setCorrectIds(prev => [...prev, currentCard.id]);
     } else {
@@ -61,42 +119,43 @@ export default function QuizScreen() {
 
     await updateCardProgress(currentCard.id, isCorrect);
 
-    // Auto-advance
-    setTimeout(() => {
-      const nextIndex = currentIndex + 1;
-      if (nextIndex < cards.length) {
-        setCurrentIndex(nextIndex);
-        setIsAnswered(false);
-        setSelectedAnswer(null);
-      } else {
-        // Complete session
-        const finalCorrectIds = isCorrect ? [...correctIds, currentCard.id] : correctIds;
-        const finalIncorrectIds = !isCorrect ? [...incorrectIds, currentCard.id] : incorrectIds;
-        
-        const result = {
-          categoryId: (categoryId as CategoryId) || 'all',
-          mode: 'quiz' as const,
-          score: finalCorrectIds.length,
-          total: cards.length,
-          missedCardIds: finalIncorrectIds,
-          completedAt: Date.now(),
-        };
+    if (settings.quizAutoAdvance) {
+      setTimeout(() => {
+        const nextIndex = currentIndex + 1;
+        if (nextIndex < cards.length) {
+          setCurrentIndex(nextIndex);
+          setIsAnswered(false);
+          setSelectedAnswer(null);
+        } else {
+          // Complete session with final updated counts
+          const finalCorrect = isCorrect ? [...correctIds, currentCard.id] : correctIds;
+          const finalIncorrect = !isCorrect ? [...incorrectIds, currentCard.id] : incorrectIds;
+          
+          const result = {
+            categoryId: (categoryId as CategoryId) || 'all',
+            mode: 'quiz' as const,
+            score: finalCorrect.length,
+            total: cards.length,
+            missedCardIds: finalIncorrect,
+            completedAt: Date.now(),
+          };
 
-        saveSessionResult(result);
-        router.replace({
-          pathname: '/results',
-          params: {
-            score: result.score,
-            total: result.total,
-            missedIds: result.missedCardIds.join(','),
-            mode: 'quiz',
-            categoryId: result.categoryId,
-            customItems,
+          saveSessionResult(result);
+          router.replace({
+            pathname: '/results',
+            params: {
+              score: result.score,
+              total: result.total,
+              missedIds: result.missedCardIds.join(','),
+              mode: 'quiz',
+              categoryId: result.categoryId,
+              customItems,
             },
-            });
-            }
-            }, 1200);
-            }, [currentIndex, isAnswered, currentCard, cards.length, correctIds, incorrectIds, categoryId, customItems]);
+          });
+        }
+      }, 1200);
+    }
+  }, [currentIndex, isAnswered, currentCard, cards.length, correctIds, incorrectIds, categoryId, customItems, settings]);
 
   if (cards.length === 0) {
     return (
@@ -121,9 +180,14 @@ export default function QuizScreen() {
       <View style={styles.quizContent}>
         <View style={styles.promptCard}>
           <Text style={styles.promptText}>{currentCard.prompt}</Text>
-          <View style={styles.divider} />
-          <Text style={styles.exampleWord}>{currentCard.exampleWord}</Text>
-          <Text style={styles.translation}>"{currentCard.translation}"</Text>
+          
+          {(settings.showHints || isAnswered) && (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.exampleWord}>{currentCard.exampleWord}</Text>
+              <Text style={styles.translation}>"{currentCard.translation}"</Text>
+            </>
+          )}
         </View>
 
         <View style={styles.optionsContainer}>
@@ -136,6 +200,15 @@ export default function QuizScreen() {
             />
           ))}
         </View>
+
+        {isAnswered && !settings.quizAutoAdvance && (
+          <View style={styles.nextButtonContainer}>
+            <Button 
+              title={currentIndex === cards.length - 1 ? "Finish" : "Next Question"} 
+              onPress={currentIndex === cards.length - 1 ? completeSession : goToNext}
+            />
+          </View>
+        )}
       </View>
     </ScreenWrapper>
   );
@@ -154,6 +227,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     borderWidth: 1,
     borderColor: Colors.border,
+    minHeight: 180,
+    justifyContent: 'center',
     // Subtle shadow
     shadowColor: Colors.ink,
     shadowOffset: { width: 0, height: 2 },
@@ -188,4 +263,8 @@ const styles = StyleSheet.create({
   optionsContainer: {
     width: '100%',
   },
+  nextButtonContainer: {
+    marginTop: 'auto',
+    marginBottom: 20,
+  }
 });

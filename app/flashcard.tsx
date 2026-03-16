@@ -1,14 +1,17 @@
 import React, { useReducer, useEffect, useMemo } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { flashcards } from '../src/data/flashcards';
 import { FlashCard } from '../src/components/FlashCard';
 import { ProgressBar } from '../src/components/ProgressBar';
 import { ScoreDisplay } from '../src/components/ScoreDisplay';
 import { ScreenWrapper } from '../src/components/ScreenWrapper';
 import { useProgress } from '../src/hooks/useProgress';
+import { useSettings } from '../src/hooks/useSettings';
 import { shuffle } from '../src/utils/shuffle';
 import { CategoryId, Flashcard } from '../src/types';
+import { playCorrectSound, playIncorrectSound, unloadSounds } from '../src/utils/sounds';
 
 type FlashcardAction =
   | { type: 'MARK_CORRECT' }
@@ -71,6 +74,7 @@ export default function FlashcardScreen() {
   }>();
   const router = useRouter();
   const { updateCardProgress, saveSessionResult } = useProgress();
+  const { settings } = useSettings();
 
   const initialCards = useMemo(() => {
     let filtered = flashcards;
@@ -94,6 +98,10 @@ export default function FlashcardScreen() {
     incorrectIds: [],
     isComplete: false,
   });
+
+  useEffect(() => {
+    return () => unloadSounds();
+  }, []);
 
   useEffect(() => {
     if (state.isComplete) {
@@ -124,6 +132,14 @@ export default function FlashcardScreen() {
 
   const handleCorrect = async () => {
     const card = state.cards[state.currentIndex];
+    
+    if (settings.hapticFeedback) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    if (settings.soundEnabled) {
+      playCorrectSound();
+    }
+
     dispatch({ type: 'MARK_CORRECT' });
     await updateCardProgress(card.id, true);
     setTimeout(() => dispatch({ type: 'NEXT' }), 300);
@@ -131,6 +147,14 @@ export default function FlashcardScreen() {
 
   const handleIncorrect = async () => {
     const card = state.cards[state.currentIndex];
+    
+    if (settings.hapticFeedback) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+    if (settings.soundEnabled) {
+      playIncorrectSound();
+    }
+
     dispatch({ type: 'MARK_INCORRECT' });
     await updateCardProgress(card.id, false);
     setTimeout(() => dispatch({ type: 'NEXT' }), 300);
@@ -160,6 +184,7 @@ export default function FlashcardScreen() {
           card={currentCard}
           onCorrect={handleCorrect}
           onIncorrect={handleIncorrect}
+          showHint={settings.showHints}
         />
       </View>
     </ScreenWrapper>

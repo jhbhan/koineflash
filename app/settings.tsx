@@ -1,64 +1,52 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, Switch, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { StyleSheet, View, Text, Switch, TouchableOpacity, Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import * as Notifications from 'expo-notifications';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
 import { ScreenWrapper } from '../src/components/ScreenWrapper';
 import { Colors } from '../src/constants/colors';
 import { loadSettings, saveSettings, clearAllProgress, DEFAULT_SETTINGS } from '../src/utils/storage';
 import { AppSettings } from '../src/types';
-import { Button } from '../src/components/Button';
+import { playCorrectSound, unloadSounds } from '../src/utils/sounds';
 
-export default function SettingsScreen() {
-  const router = useRouter();
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [isLoading, setIsLoading] = useState(true);
+// Configure notifications
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
-  useEffect(() => {
-    (async () => {
-      const savedSettings = await loadSettings();
-      setSettings(savedSettings);
-      setIsLoading(false);
-    })();
-  }, []);
-
-  const updateSetting = async (key: keyof AppSettings, value: any) => {
-    const newSettings = { ...settings, [key]: value };
-    setSettings(newSettings);
-    await saveSettings(newSettings);
-  };
-
-  const handleResetProgress = () => {
-    Alert.alert(
-      'Reset All Progress',
-      'This will permanently delete your session history and card progress. This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Reset Everything', 
-          style: 'destructive',
-          onPress: async () => {
-            await clearAllProgress();
-            Alert.alert('Success', 'All progress has been reset.');
-          }
-        }
-      ]
-    );
-  };
-
-  const SettingRow = ({ 
-    icon, 
-    label, 
-    value, 
-    onValueChange, 
-    type = 'switch' 
-  }: { 
-    icon: keyof typeof Ionicons.glyphMap, 
-    label: string, 
-    value: any, 
-    onValueChange: (v: any) => void,
-    type?: 'switch' | 'link'
-  }) => (
-    <View style={styles.settingRow}>
+// Memoized SettingRow to prevent re-renders when other settings change
+const SettingRow = React.memo(({ 
+  icon, 
+  label, 
+  value, 
+  onValueChange, 
+  type = 'switch',
+  onPress
+}: { 
+  icon: keyof typeof Ionicons.glyphMap, 
+  label: string, 
+  value?: any, 
+  onValueChange?: (v: any) => void,
+  type?: 'switch' | 'link' | 'text',
+  onPress?: () => void
+}) => {
+  // Console log to verify memoization in dev
+  // console.log(`Rendering SettingRow: ${label}`);
+  
+  return (
+    <TouchableOpacity 
+      style={styles.settingRow} 
+      activeOpacity={type === 'switch' ? 1 : 0.7}
+      onPress={onPress}
+      disabled={type === 'switch'}
+    >
       <View style={styles.settingLabelContainer}>
         <View style={styles.iconBox}>
           <Ionicons name={icon} size={20} color={Colors.terracotta} />
@@ -72,13 +60,141 @@ export default function SettingsScreen() {
           trackColor={{ false: Colors.border, true: Colors.terracotta }}
           thumbColor="white"
         />
+      ) : type === 'text' ? (
+        <Text style={styles.timeValue}>{value}</Text>
       ) : (
         <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
       )}
-    </View>
+    </TouchableOpacity>
   );
+});
+
+export default function SettingsScreen() {
+  const router = useRouter();
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const savedSettings = await loadSettings();
+      setSettings(savedSettings);
+      setIsLoading(false);
+    })();
+
+    return () => {
+      unloadSounds();
+    };
+  }, []);
+
+  const triggerHaptic = useCallback((type: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) => {
+    if (settings.hapticFeedback) {
+      Haptics.impactAsync(type);
+    }
+  }, [settings.hapticFeedback]);
+
+  const playPreviewSound = useCallback(async () => {
+    if (!settings.soundEnabled) return;
+    await playCorrectSound();
+  }, [settings.soundEnabled]);
+
+  const scheduleNotification = useCallback(async (timeStr: string) => {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Time for KoineFlash!",
+        body: "Keep up your Greek practice today!",
+        sound: true,
+      },
+      trigger: {
+        hour: hours,
+        minute: minutes,
+        repeats: true,
+      },
+    });
+  }, []);
+
+  const updateSetting = useCallback(async (key: keyof AppSettings, value: any) => {
+    setSettings(prev => {
+      const newSettings = { ...prev, [key]: value };
+      saveSettings(newSettings); // Async save in background
+      return newSettings;
+    });
+
+    if (key === 'dailyReminder') {
+      if (value) {
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Denied', 'Please enable notifications in settings to receive reminders.');
+          setSettings(prev => ({ ...prev, dailyReminder: false }));
+          return;
+        }
+        scheduleNotification(settings.reminderTime);
+      } else {
+        await Notifications.cancelAllScheduledNotificationsAsync();
+      }
+    }
+
+    if (key === 'reminderTime' && settings.dailyReminder) {
+      scheduleNotification(value);
+    }
+
+    if (typeof value === 'boolean') {
+      // Trigger haptic if it was haptic toggle itself or if haptics are enabled
+      if (key === 'hapticFeedback' ? value : settings.hapticFeedback) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      
+      if (key === 'soundEnabled' && value) {
+        playCorrectSound();
+      }
+    }
+  }, [settings.reminderTime, settings.dailyReminder, settings.hapticFeedback, scheduleNotification]);
+
+  // Memoize individual handlers to keep SettingRow props stable
+  const handleHapticToggle = useCallback((v: boolean) => updateSetting('hapticFeedback', v), [updateSetting]);
+  const handleSoundToggle = useCallback((v: boolean) => updateSetting('soundEnabled', v), [updateSetting]);
+  const handleHintsToggle = useCallback((v: boolean) => updateSetting('showHints', v), [updateSetting]);
+  const handleAutoAdvanceToggle = useCallback((v: boolean) => updateSetting('quizAutoAdvance', v), [updateSetting]);
+  const handleReminderToggle = useCallback((v: boolean) => updateSetting('dailyReminder', v), [updateSetting]);
+
+  const handleTimeChange = useCallback((event: any, selectedDate?: Date) => {
+    setShowTimePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      const hours = selectedDate.getHours().toString().padStart(2, '0');
+      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
+      updateSetting('reminderTime', `${hours}:${minutes}`);
+    }
+  }, [updateSetting]);
+
+  const handleResetProgress = useCallback(() => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(
+      'Reset All Progress',
+      'This will permanently delete your session history and card progress. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Reset Everything', 
+          style: 'destructive',
+          onPress: async () => {
+            await clearAllProgress();
+            triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+            Alert.alert('Success', 'All progress has been reset.');
+          }
+        }
+      ]
+    );
+  }, [triggerHaptic]);
 
   if (isLoading) return <ScreenWrapper><Text>Loading...</Text></ScreenWrapper>;
+
+  const reminderDate = new Date();
+  const [rh, rm] = settings.reminderTime.split(':').map(Number);
+  reminderDate.setHours(rh, rm, 0, 0);
 
   return (
     <ScreenWrapper scrollable edges={['left', 'right', 'bottom']}>
@@ -89,28 +205,28 @@ export default function SettingsScreen() {
             icon="finger-print-outline"
             label="Haptic Feedback"
             value={settings.hapticFeedback}
-            onValueChange={(v) => updateSetting('hapticFeedback', v)}
+            onValueChange={handleHapticToggle}
           />
           <View style={styles.divider} />
           <SettingRow
             icon="volume-high-outline"
             label="Sound Effects"
             value={settings.soundEnabled}
-            onValueChange={(v) => updateSetting('soundEnabled', v)}
+            onValueChange={handleSoundToggle}
           />
           <View style={styles.divider} />
           <SettingRow
             icon="help-circle-outline"
             label="Show Hints"
             value={settings.showHints}
-            onValueChange={(v) => updateSetting('showHints', v)}
+            onValueChange={handleHintsToggle}
           />
           <View style={styles.divider} />
           <SettingRow
             icon="play-forward-outline"
             label="Quiz Auto-Advance"
             value={settings.quizAutoAdvance}
-            onValueChange={(v) => updateSetting('quizAutoAdvance', v)}
+            onValueChange={handleAutoAdvanceToggle}
           />
         </View>
       </View>
@@ -122,20 +238,27 @@ export default function SettingsScreen() {
             icon="notifications-outline"
             label="Daily Reminder"
             value={settings.dailyReminder}
-            onValueChange={(v) => updateSetting('dailyReminder', v)}
+            onValueChange={handleReminderToggle}
           />
           {settings.dailyReminder && (
              <>
                <View style={styles.divider} />
-               <TouchableOpacity style={styles.settingRow}>
-                 <View style={styles.settingLabelContainer}>
-                   <View style={styles.iconBox}>
-                     <Ionicons name="time-outline" size={20} color={Colors.terracotta} />
-                   </View>
-                   <Text style={styles.settingLabel}>Reminder Time</Text>
-                 </View>
-                 <Text style={styles.timeValue}>{settings.reminderTime}</Text>
-               </TouchableOpacity>
+               <SettingRow
+                  icon="time-outline"
+                  label="Reminder Time"
+                  type="text"
+                  value={settings.reminderTime}
+                  onPress={() => setShowTimePicker(true)}
+               />
+               {showTimePicker && (
+                 <DateTimePicker
+                   value={reminderDate}
+                   mode="time"
+                   is24Hour={true}
+                   display="default"
+                   onChange={handleTimeChange}
+                 />
+               )}
              </>
           )}
         </View>
@@ -144,14 +267,12 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Data & Progress</Text>
         <View style={styles.card}>
-          <TouchableOpacity style={styles.settingRow} onPress={handleResetProgress}>
-            <View style={styles.settingLabelContainer}>
-              <View style={[styles.iconBox, { backgroundColor: 'rgba(255,59,48,0.1)' }]}>
-                <Ionicons name="trash-outline" size={20} color={Colors.errorRed} />
-              </View>
-              <Text style={[styles.settingLabel, { color: Colors.errorRed }]}>Reset All Progress</Text>
-            </View>
-          </TouchableOpacity>
+          <SettingRow
+            icon="trash-outline"
+            label="Reset All Progress"
+            type="link"
+            onPress={handleResetProgress}
+          />
         </View>
       </View>
 

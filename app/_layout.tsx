@@ -84,12 +84,6 @@ export default function RootLayout() {
               headerBackTitle: 'Back',
             }}
           />
-          <Stack.Screen
-            name="settings"
-            options={{
-              headerShown: false,
-            }}
-          />
         </Stack>
       </GestureHandlerRootView>
     </SafeAreaProvider>

@@ -1,15 +1,14 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { StyleSheet, View, Text, FlatList, Modal, TouchableOpacity } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Stack, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { Button } from '../src/components/Button';
+import { CategoryCard } from '../src/components/CategoryCard';
+import { ModeSelectionModal } from '../src/components/ModeSelectionModal';
+import { ScreenWrapper } from '../src/components/ScreenWrapper';
+import { Colors } from '../src/constants/colors';
 import { categories } from '../src/data/categories';
 import { flashcards } from '../src/data/flashcards';
-import { CategoryCard } from '../src/components/CategoryCard';
-import { ScreenWrapper } from '../src/components/ScreenWrapper';
-import { ModeSelectionModal } from '../src/components/ModeSelectionModal';
-import { Button } from '../src/components/Button';
 import { useProgress } from '../src/hooks/useProgress';
-import { Colors } from '../src/constants/colors';
 import { Category } from '../src/types';
 
 export default function HomeScreen() {

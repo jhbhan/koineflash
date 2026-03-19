@@ -1,27 +1,14 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, Switch, TouchableOpacity, Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import * as Notifications from 'expo-notifications';
-import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { ScreenWrapper } from '../src/components/ScreenWrapper';
 import { Colors } from '../src/constants/colors';
 import { loadSettings, saveSettings, clearAllProgress, DEFAULT_SETTINGS } from '../src/utils/storage';
 import { AppSettings } from '../src/types';
 import { playCorrectSound, unloadSounds } from '../src/utils/sounds';
-
-// Configure notifications
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
 
 // Memoized SettingRow to prevent re-renders when other settings change
 const SettingRow = React.memo(({ 
@@ -39,9 +26,6 @@ const SettingRow = React.memo(({
   type?: 'switch' | 'link' | 'text',
   onPress?: () => void
 }) => {
-  // Console log to verify memoization in dev
-  // console.log(`Rendering SettingRow: ${label}`);
-  
   return (
     <TouchableOpacity 
       style={styles.settingRow} 
@@ -95,58 +79,14 @@ export default function SettingsScreen() {
     }
   }, [settings.hapticFeedback]);
 
-  const playPreviewSound = useCallback(async () => {
-    if (!settings.soundEnabled) return;
-    await playCorrectSound();
-  }, [settings.soundEnabled]);
-
-  const scheduleNotification = useCallback(async (timeStr: string) => {
-    await Notifications.cancelAllScheduledNotificationsAsync();
-    
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "Time for KoineFlash!",
-        body: "Keep up your Greek practice today!",
-        sound: true,
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
-        hour: hours,
-        minute: minutes,
-        repeats: true,
-      },
-    });
-  }, []);
-
   const updateSetting = useCallback(async (key: keyof AppSettings, value: any) => {
     setSettings(prev => {
       const newSettings = { ...prev, [key]: value };
-      saveSettings(newSettings); // Async save in background
+      saveSettings(newSettings);
       return newSettings;
     });
 
-    if (key === 'dailyReminder') {
-      if (value) {
-        const { status } = await Notifications.requestPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Permission Denied', 'Please enable notifications in settings to receive reminders.');
-          setSettings(prev => ({ ...prev, dailyReminder: false }));
-          return;
-        }
-        scheduleNotification(settings.reminderTime);
-      } else {
-        await Notifications.cancelAllScheduledNotificationsAsync();
-      }
-    }
-
-    if (key === 'reminderTime' && settings.dailyReminder) {
-      scheduleNotification(value);
-    }
-
     if (typeof value === 'boolean') {
-      // Trigger haptic if it was haptic toggle itself or if haptics are enabled
       if (key === 'hapticFeedback' ? value : settings.hapticFeedback) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
@@ -155,29 +95,18 @@ export default function SettingsScreen() {
         playCorrectSound();
       }
     }
-  }, [settings.reminderTime, settings.dailyReminder, settings.hapticFeedback, scheduleNotification]);
+  }, [settings.hapticFeedback]);
 
-  // Memoize individual handlers to keep SettingRow props stable
   const handleHapticToggle = useCallback((v: boolean) => updateSetting('hapticFeedback', v), [updateSetting]);
   const handleSoundToggle = useCallback((v: boolean) => updateSetting('soundEnabled', v), [updateSetting]);
   const handleHintsToggle = useCallback((v: boolean) => updateSetting('showHints', v), [updateSetting]);
   const handleAutoAdvanceToggle = useCallback((v: boolean) => updateSetting('quizAutoAdvance', v), [updateSetting]);
-  const handleReminderToggle = useCallback((v: boolean) => updateSetting('dailyReminder', v), [updateSetting]);
-
-  const handleTimeChange = useCallback((event: any, selectedDate?: Date) => {
-    setShowTimePicker(Platform.OS === 'ios');
-    if (selectedDate) {
-      const hours = selectedDate.getHours().toString().padStart(2, '0');
-      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-      updateSetting('reminderTime', `${hours}:${minutes}`);
-    }
-  }, [updateSetting]);
 
   const handleResetProgress = useCallback(() => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       'Reset All Progress',
-      'This will permanently delete your session history and card progress. This action cannot be undone.',
+      'This will permanently delete your session history and card progress.',
       [
         { text: 'Cancel', style: 'cancel' },
         { 
@@ -194,10 +123,6 @@ export default function SettingsScreen() {
   }, [triggerHaptic]);
 
   if (isLoading) return <ScreenWrapper><Text>Loading...</Text></ScreenWrapper>;
-
-  const reminderDate = new Date();
-  const [rh, rm] = settings.reminderTime.split(':').map(Number);
-  reminderDate.setHours(rh, rm, 0, 0);
 
   return (
     <ScreenWrapper scrollable edges={['left', 'right', 'bottom']}>
@@ -237,33 +162,9 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Notifications</Text>
         <View style={styles.card}>
-          <SettingRow
-            icon="notifications-outline"
-            label="Daily Reminder"
-            value={settings.dailyReminder}
-            onValueChange={handleReminderToggle}
-          />
-          {settings.dailyReminder && (
-             <>
-               <View style={styles.divider} />
-               <SettingRow
-                  icon="time-outline"
-                  label="Reminder Time"
-                  type="text"
-                  value={settings.reminderTime}
-                  onPress={() => setShowTimePicker(true)}
-               />
-               {showTimePicker && (
-                 <DateTimePicker
-                   value={reminderDate}
-                   mode="time"
-                   is24Hour={true}
-                   display="default"
-                   onChange={handleTimeChange}
-                 />
-               )}
-             </>
-          )}
+           <Text style={styles.noticeText}>
+             Daily reminders are currently disabled for Expo Go. Use a development build to enable notifications.
+           </Text>
         </View>
       </View>
 
@@ -280,7 +181,7 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.aboutSection}>
-        <Text style={styles.aboutTitle}>KoineFlash</Text>
+        <Text style={styles.aboutTitle}>Koine Flash</Text>
         <Text style={styles.version}>Version 1.0.0</Text>
         <Text style={styles.credit}>For the Glory of God and the Study of His Word.</Text>
       </View>
@@ -342,6 +243,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.terracotta,
     fontWeight: '700',
+  },
+  noticeText: {
+    padding: 16,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
+    fontSize: 14,
+    lineHeight: 20,
   },
   aboutSection: {
     alignItems: 'center',

@@ -43,12 +43,17 @@ export default function QuizScreen() {
   const [incorrectIds, setIncorrectIds] = useState<string[]>([]);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
+  const [showHintOverride, setShowHintOverride] = useState(false);
 
   useEffect(() => {
     return () => unloadSounds();
   }, []);
 
   const currentCard = cards[currentIndex];
+
+  useEffect(() => {
+    setShowHintOverride(false);
+  }, [currentIndex]);
 
   const options = useMemo(() => {
     if (!currentCard) return [];
@@ -181,12 +186,24 @@ export default function QuizScreen() {
         <View style={styles.promptCard}>
           <Text style={styles.promptText}>{currentCard.prompt}</Text>
           
-          {(settings.showHints || isAnswered) && (
+          {isAnswered ? (
             <>
               <View style={styles.divider} />
               <Text style={styles.exampleWord}>{currentCard.exampleWord}</Text>
               <Text style={styles.translation}>"{currentCard.translation}"</Text>
             </>
+          ) : (
+            (settings.showHints || showHintOverride) && (
+              <View style={styles.hintContainer}>
+                {showHintOverride ? (
+                  <Text style={styles.hintText}>{currentCard.hint}</Text>
+                ) : (
+                  <TouchableOpacity onPress={() => setShowHintOverride(true)}>
+                    <Text style={styles.showHintButton}>Show Hint</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )
           )}
         </View>
 
@@ -204,7 +221,7 @@ export default function QuizScreen() {
         {isAnswered && !settings.quizAutoAdvance && (
           <View style={styles.nextButtonContainer}>
             <Button 
-              title={currentIndex === cards.length - 1 ? "Finish" : "Next Question"} 
+              label={currentIndex === cards.length - 1 ? "Finish" : "Next Question"} 
               onPress={currentIndex === cards.length - 1 ? completeSession : goToNext}
             />
           </View>
@@ -259,6 +276,26 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontStyle: 'italic',
     marginTop: 4,
+  },
+  hintContainer: {
+    marginTop: 15,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+    width: '100%',
+    alignItems: 'center',
+  },
+  hintText: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  showHintButton: {
+    fontSize: 14,
+    color: Colors.terracotta,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
   optionsContainer: {
     width: '100%',

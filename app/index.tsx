@@ -57,19 +57,7 @@ export default function HomeScreen() {
     <ScreenWrapper padded={false} edges={['left', 'right']}>
       <Stack.Screen 
         options={{
-          headerRight: () => (
-            <TouchableOpacity 
-              onPress={() => router.push('/settings')} 
-              style={{ 
-                padding: 10,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="settings-outline" size={24} color={Colors.ink} />
-            </TouchableOpacity>
-          ),
+          headerRight: () => null,
         }} 
       />
       <FlatList
@@ -122,7 +110,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   listContent: {
     padding: 20,
-    paddingTop: 10, // Reduced top padding
+    paddingTop: 0,
     paddingBottom: 60, // Increased bottom padding to clear the home indicator
   },
   header: {

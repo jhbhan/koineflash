@@ -1,4 +1,4 @@
-import { Audio } from 'expo-audio';
+import { createAudioPlayer } from 'expo-audio';
 
 // Verified sound URLs from SoundJay
 const CORRECT_SOUND_URI = 'https://www.soundjay.com/buttons/button-3.mp3';
@@ -9,14 +9,14 @@ let incorrectPlayer: any = null;
 
 function getCorrectPlayer() {
   if (!correctPlayer) {
-    correctPlayer = Audio.createAudioPlayer(CORRECT_SOUND_URI);
+    correctPlayer = createAudioPlayer(CORRECT_SOUND_URI);
   }
   return correctPlayer;
 }
 
 function getIncorrectPlayer() {
   if (!incorrectPlayer) {
-    incorrectPlayer = Audio.createAudioPlayer(INCORRECT_SOUND_URI);
+    incorrectPlayer = createAudioPlayer(INCORRECT_SOUND_URI);
   }
   return incorrectPlayer;
 }

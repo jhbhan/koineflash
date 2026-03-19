@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Koine Flash Asset Generator</title>
+  <style>
+    body { font-family: sans-serif; padding: 40px; background: #f0f0f0; }
+    .card { background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    h2 { margin-top: 0; color: #C0622A; }
+    .preview { border: 1px solid #ddd; margin: 10px 0; max-width: 300px; display: block; }
+    button { padding: 10px 20px; background: #1a0a00; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #3d2b1f; }
+  </style>
+</head>
+<body>
+  <h1>Koine Flash Asset Generator (No-Logo Splash)</h1>
+  <p>I've removed the logo from the splash screen as requested. The App Icon remains the Kappa design.</p>
+
+  <div class="card">
+    <h2>App Store Icon (1024x1024)</h2>
+    <canvas id="iconCanvas" width="1024" height="1024" class="preview" style="width: 200px; height: 200px;"></canvas>
+    <button onclick="download('iconCanvas', 'icon.png')">Download 1024x1024 PNG</button>
+  </div>
+
+  <div class="card">
+    <h2>Splash Screen (1284x2778)</h2>
+    <canvas id="splashCanvas" width="1284" height="2778" class="preview" style="width: 150px; height: 325px;"></canvas>
+    <button onclick="download('splashCanvas', 'splash.png')">Download Splash PNG</button>
+  </div>
+
+  <script>
+    const iconSvgContent = `<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="1024" height="1024" fill="#FAF0DC"/><circle cx="512" cy="512" r="480" fill="#F5E6C8" stroke="#D4B896" stroke-width="12"/><path d="M350 250V774M350 512L674 250M350 512L674 774" stroke="#C0622A" stroke-width="100" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
+    
+    const splashSvgContent = `<svg width="1284" height="2778" viewBox="0 0 1284 2778" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="1284" height="2778" fill="#FAF0DC"/><text x="50%" y="1300" text-anchor="middle" font-family="serif" font-size="96" font-weight="700" fill="#1A0A00">Koine Flash</text><text x="50%" y="1400" text-anchor="middle" font-family="serif" font-size="32" font-style="italic" fill="#7A5C3A">ὁ λόγος σου ἰσχυρός ἐστιν</text><rect x="100" y="100" width="1084" height="2578" rx="20" stroke="#D4B896" stroke-width="2" opacity="0.4"/></svg>`;
+
+    function download(canvasId, filename) {
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = document.getElementById(canvasId).toDataURL('image/png');
+      link.click();
+    }
+
+    function loadAndRender() {
+      const iconImg = new Image();
+      iconImg.onload = () => document.getElementById('iconCanvas').getContext('2d').drawImage(iconImg, 0, 0, 1024, 1024);
+      iconImg.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(iconSvgContent)));
+
+      const splashImg = new Image();
+      splashImg.onload = () => document.getElementById('splashCanvas').getContext('2d').drawImage(splashImg, 0, 0, 1284, 2778);
+      splashImg.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(splashSvgContent)));
+    }
+
+    window.onload = loadAndRender;
+  </script>
+</body>
+</html>

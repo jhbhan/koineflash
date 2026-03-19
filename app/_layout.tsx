@@ -49,6 +49,10 @@ export default function RootLayout() {
             name="index"
             options={{
               title: 'KoineFlash',
+              headerTitleStyle: {
+                fontSize: 24,
+                fontFamily: 'CrimsonPro_700Bold',
+              }
             }}
           />
           <Stack.Screen
@@ -83,8 +87,7 @@ export default function RootLayout() {
           <Stack.Screen
             name="settings"
             options={{
-              title: 'Settings',
-              headerBackTitle: 'Back',
+              headerShown: false,
             }}
           />
         </Stack>
